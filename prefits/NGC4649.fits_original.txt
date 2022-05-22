@@ -1,0 +1,18 @@
+((beta2d.b1 + beta2d.b2) + const2d.bkg)
+   Param        Type          Value          Min          Max      Units
+   -----        ----          -----          ---          ---      -----
+   b1.r0        thawed      10.3852         0.01        10000           
+   b1.xpos      thawed      129.015            1          257           
+   b1.ypos      thawed      128.254            1          257           
+   b1.ellip     frozen            0            0          0.7           
+   b1.theta     frozen            0     -6.28319      6.28319    radians
+   b1.ampl      thawed      142.506     0.175938       175938           
+   b1.alpha     thawed      1.10796          0.1           10           
+   b2.r0        thawed      0.78294          0.1         1000           
+   b2.xpos      linked      129.015            expr: b1.xpos           
+   b2.ypos      linked      128.254            expr: b1.ypos           
+   b2.ellip     linked            0           expr: b1.ellip           
+   b2.theta     linked            0           expr: b1.theta    radians
+   b2.ampl      thawed      37.4465         0.01         2000           
+   b2.alpha     linked      1.10796           expr: b1.alpha           
+   bkg.c0       thawed     0.252966        1e-06           10           
