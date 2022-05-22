@@ -1,2 +1,5 @@
-# Beta-modelling
-Interactive tool for beta modelling the surface brightness of galaxies
+# Beta modelling
+
+Jupyter notebook that (using ipywidgets) enables interactive fitting of beta models to images of galaxies
+
+![](img.png)
