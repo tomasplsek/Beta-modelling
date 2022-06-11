@@ -1,6 +1,6 @@
 # Beta modelling
 
-A jupyter notebook that simplifies beta modelling of X-ray images of eliptical galaxies. The notebook combines [Ipywidgets](https://github.com/jupyter-widgets/ipywidgets) with the [Sherpa 4.14](https://cxc.cfa.harvard.edu/sherpa4.14/) package and provides a simple graphical interface with a set models for fitting the 2D surface brightness distribution of astronomical X-ray images. The parameters of the model are easily adjusted, freezed, or tied using clickable sliders and checkboxes.
+A jupyter notebook that simplifies beta modelling of X-ray images of eliptical galaxies. The notebook combines [Ipywidgets](https://github.com/jupyter-widgets/ipywidgets) with the [Sherpa 4.14](https://cxc.cfa.harvard.edu/sherpa4.14/) package and provides a simple graphical interface for fitting the 2D surface brightness distribution of astronomical X-ray images. The notebook offers a set of models (simple or complex β-model, Caveliere & Frusco-Femiano 1978) whose parameters can be easily adjusted, frozen or tied using clickable sliders and checkboxes.
 
 # Usage
 
