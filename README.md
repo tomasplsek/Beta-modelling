@@ -4,7 +4,7 @@ A jupyter notebook that simplifies beta modelling of X-ray images of eliptical g
 
 # Usage
 
-The `beta_fitting.ipynb` notebook can be used simply by running it in the Jupyter Notebook or JupyterLab platform using Python environment with all required libraries (stated in Requirements). Alternatively, the notebook can be run using a [Voilà](https://github.com/voila-dashboards/voila) package:
+The `beta_fitting.ipynb` notebook can be used simply by running it in the Jupyter Notebook or JupyterLab platform using Python environment with all required libraries (stated in Requirements). Alternatively, the notebook can be run using [Voilà](https://github.com/voila-dashboards/voila) package:
 ```bash
 $ voila beta_fitting.ipynb
 ```
@@ -12,9 +12,9 @@ which autoruns the whole notebook and displays the cell outputs in a new browser
 
  The notebook automaticaly finds all fits files in current directory and lists them in the `Galaxy:` dropdown selection menu. When the galaxy image is loaded, one can pick a size scale of the fitted part of the image and also choose between various types of models (single or double beta model etc.) A given model is described by a set of parameters that can be adjusted, freezed, or tied with others using sliders and checkboxes.
  
- Whenever an optimal model and set of parameters is chosen by the user, it can be fitted using the `Fit` button. The fitted parameters can be saved into a text file using the `Save` button and the residual image is saved by the `Residual` button. Altarnatively, the user can run an MCMC simulation (`Run MCMC` button) to properly estimate the uncertainties of the fitted parameters and also correlations between them. One can set the length and burn length of the actual MCMC chain as well as the fit statistics (chi2, cstat, etc.). After the chain is finished and saved into a FITS file, the distributions of fitted parameters are plotted in a corner plot and saved into a PDF file.
+ Whenever an optimal model and set of parameters is chosen by the user, it can be fitted using the `Fit` button. The fitted parameters can be saved into a text file using the `Save to txt` button and the residual image is saved by the `Save residual` button. Altarnatively, the user can run an MCMC simulation (`Run MCMC` button) to properly estimate the uncertainties of the fitted parameters and also correlations between them. One can set the length and burn length of the MCMC chain as well as the fit statistics (chi2, cstat, etc.). After the chain is finished and saved into a FITS file, the distributions of fitted parameters are plotted in a corner plot and saved into a PDF.
 
- The output window in the bottom right shows radial profile of both data and model (individual model components are displayed separately), original image, model image, and also a residual image obtained by substracting the model from the original image.
+ The output window in the bottom right shows radial profiles of both the data and the model (individual model components are displayed separately), original image, model image, and also a residual image obtained by substracting the model from the original image.
 
 ![Note: the notebook runs smoother than the gif shows :)](out.gif)
 
