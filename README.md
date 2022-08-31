@@ -43,6 +43,7 @@ The github repository includes three exemplary X-ray images of elliptical galaxi
 
 # Todo
 
+- add sersic and other profiles
 - add image preprocessing functionalities (finding and filling point sources)
 - add other methods (unsharp masking, GGM)
 - implement Arithmetic with X-ray images ([Churazov et al. 2016](https://arxiv.org/abs/1605.08999))
