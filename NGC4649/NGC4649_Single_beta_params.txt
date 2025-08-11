@@ -1,0 +1,35 @@
+Beta Profile Fit Parameters
+Galaxy: NGC4649
+Model: Single beta
+Size: original
+==================================================
+
+beta2d.b1.r0: 1.022851e+01
+  Range: [5.000e-02, 1.000e+03]
+  Status: FREE
+
+beta2d.b1.ampl: 1.450799e+02
+  Range: [1.000e-02, 5.000e+04]
+  Status: FREE
+
+beta2d.b1.alpha: 1.102694e+00
+  Range: [1.000e-01, 1.000e+01]
+  Status: FREE
+
+beta2d.b1.xpos: 1.290110e+02
+  Range: [0.000e+00, 2.570e+02]
+  Status: FREE
+
+beta2d.b1.ypos: 1.282436e+02
+  Range: [0.000e+00, 2.570e+02]
+  Status: FREE
+
+const2d.bkg.c0: 2.469001e-01
+  Range: [1.000e-03, 2.000e+02]
+  Status: FREE
+
+Fit Statistics:
+Statistic: cstat
+Statistic value: 7.810888e+04
+Degrees of freedom: 66043
+Reduced statistic: 1.182697e+00

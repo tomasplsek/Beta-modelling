@@ -11,18 +11,14 @@ Author: Extracted from beta_fitting_improved.py
 
 import os
 import glob
-import warnings
 from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-# Disable astropy warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='astropy')
-warnings.filterwarnings('ignore', module='astropy')
-from astropy.utils.exceptions import AstropyWarning
-from astropy.wcs import FITSFixedWarning
-warnings.filterwarnings('ignore', category=AstropyWarning)
-warnings.filterwarnings('ignore', category=FITSFixedWarning)
+# Import utility functions
+from utils import suppress_astropy_warnings, calculate_pixel_scale_from_wcs
+suppress_astropy_warnings()
+
 from astropy.wcs import WCS
 WCS._do_not_fail_on_wcs_error = True
 
@@ -115,7 +111,7 @@ class ImageData:
     model: np.ndarray
     residual: np.ndarray
     center: Tuple[float, float]
-    scale: float
+    size: float
     smoothing_std: float
     wcs: Optional[WCS] = None
     
@@ -123,37 +119,26 @@ class ImageData:
     def data_cutout(self) -> np.ndarray:
         """Get data cutout around center."""
         x0, y0 = self.center
-        return self.data[int(x0-self.scale):int(x0+self.scale), 
-                        int(y0-self.scale):int(y0+self.scale)]
+        return self.data[int(x0-self.size):int(x0+self.size), 
+                        int(y0-self.size):int(y0+self.size)]
     
     @property
     def model_cutout(self) -> np.ndarray:
         """Get model cutout around center."""
         x0, y0 = self.center
-        return self.model[int(x0-self.scale):int(x0+self.scale), 
-                         int(y0-self.scale):int(y0+self.scale)]
+        return self.model[int(x0-self.size):int(x0+self.size), 
+                         int(y0-self.size):int(y0+self.size)]
     
     @property
     def residual_cutout(self) -> np.ndarray:
         """Get residual cutout around center."""
         x0, y0 = self.center
-        return self.residual[int(x0-self.scale):int(x0+self.scale), 
-                            int(y0-self.scale):int(y0+self.scale)]
+        return self.residual[int(x0-self.size):int(x0+self.size), 
+                            int(y0-self.size):int(y0+self.size)]
     
     def get_pixel_scale_arcsec(self) -> float:
         """Calculate pixel scale in arcseconds from WCS information."""
-        if self.wcs is None:
-            # Fallback to default pixel scale
-            return 0.492
-        
-        try:
-            # Get pixel scale from WCS in degrees
-            pixel_scale_deg = abs(self.wcs.wcs.cdelt[0])  # degrees per pixel
-            pixel_scale_arcsec = pixel_scale_deg * 3600.0  # convert to arcsec per pixel
-            return pixel_scale_arcsec
-        except:
-            # Fallback if WCS calculation fails
-            return 0.492
+        return calculate_pixel_scale_from_wcs(self.wcs)
 
 
 class ModelParameter:
@@ -235,22 +220,24 @@ class GalaxyImage:
         except Exception as e:
             raise IOError(f"Failed to load image {self.filepath}: {e}")
     
-    def get_cutout(self, scale: Union[str, int]) -> np.ndarray:
+    def get_cutout(self, size: Union[str, int]) -> np.ndarray:
         """Get a cutout of the image."""
-        if scale == "original":
+        if size == "original":
             return self.data
         
-        if isinstance(scale, str):
-            scale = int(scale.split()[0].split("x")[0])
+        if isinstance(size, str):
+            size_val = int(size.split()[0].split("x")[0])
+        else:
+            size_val = size
         
         center_x, center_y = self.center
-        if scale > center_x * 2:
-            raise ValueError(f"Scale {scale} is larger than image size")
+        if size_val > center_x * 2:
+            raise ValueError(f"Size {size_val} is larger than image size")
         
-        x_start = int(center_x - scale // 2)
-        x_end = int(center_x + scale // 2)
-        y_start = int(center_y - scale // 2)
-        y_end = int(center_y + scale // 2)
+        x_start = int(center_x - size_val // 2)
+        x_end = int(center_x + size_val // 2)
+        y_start = int(center_y - size_val // 2)
+        y_end = int(center_y + size_val // 2)
         
         return self.data[x_start:x_end, y_start:y_end]
 
@@ -349,7 +336,7 @@ class BetaModel:
             set_par(g1.ampl, val=50, min=1e-3, max=1e5)
         
         # Background
-        set_par(bkg.c0, val=1e-3, min=1e-6, max=200)
+        set_par(bkg.c0, val=1e-3, min=0.001, max=200)
 
 
 class MCMCAnalyzer:
@@ -358,7 +345,7 @@ class MCMCAnalyzer:
     def __init__(self, config: FittingConfig):
         self.config = config
     
-    def run_mcmc(self, length: int, burn_in: int, galaxy_name: str) -> pd.DataFrame:
+    def run_mcmc(self, length: int, burn_in: int, galaxy_name: str, model_type: str = None, return_stats: bool = False) -> pd.DataFrame:
         """Run MCMC analysis and return results."""
         # Setup covariance
         covar()
@@ -368,23 +355,69 @@ class MCMCAnalyzer:
         set_sampler("metropolismh")
         set_sampler_opt('defaultprior', True)
         
-        print(f"Running MCMC simulation with {length} iterations.")
+        print(f"\nRunning MCMC simulation with {length} iterations.")
         print(f"First {burn_in} iterations will be burned.\n")
         
         # Run MCMC
         stats, accept, params = get_draws(1, niter=length)
         
-        # Burn-in
-        stats = stats[burn_in:]
-        params = params[:, burn_in:]
+        # Calculate acceptance rate before burn-in removal
+        total_samples = len(accept)
+        accepted_samples = np.sum(accept)
+        acceptance_rate = (accepted_samples / total_samples) * 100
         
-        # Create DataFrame
-        df = pd.DataFrame(data=params.T, columns=res.parnames)
+        print(f"Total samples: {total_samples}")
+        print(f"Accepted samples: {accepted_samples} ({acceptance_rate:.1f}%)")
         
-        # Save chain
-        df.to_csv(f"{galaxy_name}_chain.csv", index=False)
+        # Apply burn-in
+        stats_burned = stats[burn_in:]
+        accept_burned = accept[burn_in:]
+        params_burned = params[:, burn_in:]
         
-        return df
+        # Filter only accepted samples after burn-in
+        accepted_mask = accept_burned.astype(bool)
+        stats_accepted = stats_burned[accepted_mask]
+        params_accepted = params_burned[:, accepted_mask]
+        
+        # Report post-burn-in acceptance
+        post_burnin_total = len(accept_burned)
+        post_burnin_accepted = np.sum(accepted_mask)
+        post_burnin_rate = (post_burnin_accepted / post_burnin_total) * 100 if post_burnin_total > 0 else 0
+        
+        print(f"Post burn-in samples: {post_burnin_total}")
+        print(f"Post burn-in accepted: {post_burnin_accepted} ({post_burnin_rate:.1f}%)")
+        
+        # Create DataFrame from accepted samples only
+        df = pd.DataFrame(data=params_accepted.T, columns=res.parnames)
+        
+        # Create accepted statistics array for trace plot (burn-in + post-burn-in accepted)
+        # Filter accepted samples from the full stats array (including burn-in)
+        full_accepted_mask = accept.astype(bool)
+        stats_all_accepted = stats[full_accepted_mask]
+        
+        # Split accepted stats into burn-in and post-burn-in portions
+        # Count accepted samples up to burn_in point
+        accepted_burnin_count = np.sum(accept[:burn_in])
+        stats_accepted_burnin = stats_all_accepted[:accepted_burnin_count] if accepted_burnin_count > 0 else np.array([])
+        stats_accepted_postburnin = stats_all_accepted[accepted_burnin_count:] if accepted_burnin_count < len(stats_all_accepted) else np.array([])
+        
+        # Create output folder based on galaxy name (without .fits)
+        folder_name = galaxy_name.replace('.fits', '')
+        os.makedirs(folder_name, exist_ok=True)
+        
+        # Save chain in the folder with model type
+        if model_type:
+            model_suffix = f"_{model_type.replace(' ', '_')}"
+        else:
+            model_suffix = ""
+        chain_filename = os.path.join(folder_name, f"{galaxy_name}{model_suffix}_chain.csv")
+        df.to_csv(chain_filename, index=False)
+        
+        # Return the full stats array including all iterations (not just accepted)
+        if return_stats:
+            return df, stats, accept
+        else:
+            return df
 
 
 class BetaFittingTool:
@@ -428,7 +461,7 @@ class BetaFittingTool:
         set_coord("image")
         print(f"Loaded galaxy: {self.current_galaxy.name}")
         print(f"Image shape: {self.current_galaxy.shape}")
-        print(f"Scale: {scale}")
+        print(f"Size: {scale}")
     
     def setup_model(self, model_type: str):
         """Setup the fitting model."""
@@ -450,10 +483,9 @@ class BetaFittingTool:
         
         set_coord("image")
         
-        # Now that data is loaded, make initial parameter guess
-        from sherpa.astro.ui import guess, get_model_component
-        b1 = get_model_component('b1')
-        guess(b1)
+        # Initial parameter guessing disabled to preserve manually set xpos/ypos
+        # The guess() function would override all parameters including positions
+        # Manual parameter setup in _setup_initial_parameters() is used instead
         
         # Set default frozen parameters
         self.set_default_frozen_parameters()
@@ -471,9 +503,9 @@ class BetaFittingTool:
         if statistic:
             set_stat(statistic)
         
-        print("Fitting model...")
+        print("Fitting model...\n")
         fit()
-        print("Fit completed!")
+        print("\nFit completed!")
         
         # Show fit results
         self.show_fit_results()
@@ -648,10 +680,10 @@ class BetaFittingTool:
             y_fit = get_model_prof(model=b1).y
             
             # Get pixel scale from WCS if available
-            if self.current_galaxy and hasattr(self.current_galaxy, 'wcs') and self.current_galaxy.wcs:
-                pixel_scale = self._calculate_pixel_scale_from_wcs(self.current_galaxy.wcs)
-            else:
-                pixel_scale = self.config.pixel_scale
+            pixel_scale = calculate_pixel_scale_from_wcs(
+                self.current_galaxy.wcs if self.current_galaxy else None, 
+                self.config.pixel_scale
+            )
             
             # Convert radius from pixels to arcseconds
             rad_arcsec = rad_pixels * pixel_scale
@@ -693,11 +725,11 @@ class BetaFittingTool:
         try:
             from sherpa.astro.ui import get_data, get_model_image, get_resid_image
             
-            # Get scale information
+            # Get size information
             if self.current_scale == "original":
-                scale = self.current_galaxy.center[0]
+                size = self.current_galaxy.center[0]
             else:
-                scale = float(self.current_scale.split()[0].split("x")[0]) / 2
+                size = float(self.current_scale.split()[0].split("x")[0]) / 2
             
             # Get images
             data = self.current_galaxy.data
@@ -706,14 +738,14 @@ class BetaFittingTool:
             residual_data = (data - model_data) / np.sqrt(model_data)
             
             # Get smoothing parameter
-            smoothing_std = self.config.smoothing_map.get(scale * 2 // 64 * 64, 1)
+            smoothing_std = self.config.smoothing_map.get(size * 2 // 64 * 64, 1)
             
             return ImageData(
                 data=data,
                 model=model_data,
                 residual=residual_data,
                 center=self.current_galaxy.center,
-                scale=scale,
+                size=size,
                 smoothing_std=smoothing_std,
                 wcs=self.current_galaxy.wcs if self.current_galaxy else None
             )
@@ -721,7 +753,6 @@ class BetaFittingTool:
         except Exception as e:
             print(f"Error extracting image data: {e}")
             return None
-    
     def get_beta_model_params(self) -> Dict[str, Dict[str, float]]:
         """Extract beta model parameters for plotting overlay."""
         beta_params = {}
@@ -892,16 +923,6 @@ class BetaFittingTool:
         
         return param_values
     
-    def _calculate_pixel_scale_from_wcs(self, wcs) -> float:
-        """Calculate pixel scale in arcseconds per pixel from WCS."""
-        try:
-            # Get pixel scale from WCS in degrees
-            pixel_scale_deg = abs(wcs.wcs.cdelt[0])  # degrees per pixel
-            pixel_scale_arcsec = pixel_scale_deg * 3600.0  # convert to arcsec per pixel
-            return pixel_scale_arcsec
-        except Exception as e:
-            print(f"Warning: Could not calculate pixel scale from WCS: {e}")
-            return self.config.pixel_scale  # fallback to default
     
     def _calculate_beta1d_profile(self, radius: np.ndarray, beta_params: dict, pixel_scale: float = None) -> np.ndarray:
         """Calculate 1D beta profile from parameter dictionary."""
