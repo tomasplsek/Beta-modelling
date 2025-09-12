@@ -1,0 +1,71 @@
+Beta Profile Fit Parameters
+Galaxy: NGC4778
+Model: Double beta
+Size: original
+==================================================
+
+beta2d.b1.r0: 1.285198e+01
+  Range: [5.000e-02, 1.000e+03]
+  Status: FREE
+
+beta2d.b1.ampl: 1.659587e+01
+  Range: [1.000e-02, 5.000e+05]
+  Status: FREE
+
+beta2d.b1.alpha: 3.311311e+00
+  Range: [1.000e-01, 1.000e+01]
+  Status: FREE
+
+beta2d.b1.ellip: 0.000000e+00
+  Range: [0.000e+00, 7.000e-01]
+  Status: FROZEN
+
+beta2d.b1.theta: 1.776357e-15
+  Range: [-6.283e+00, 6.283e+00]
+  Status: FROZEN
+
+beta2d.b1.xpos: 2.572873e+02
+  Range: [0.000e+00, 5.130e+02]
+  Status: FREE
+
+beta2d.b1.ypos: 2.573069e+02
+  Range: [0.000e+00, 5.130e+02]
+  Status: FREE
+
+beta2d.b2.r0: 3.548134e+01
+  Range: [1.000e-01, 1.000e+03]
+  Status: FREE
+
+beta2d.b2.ampl: 9.549926e+00
+  Range: [1.000e-02, 5.000e+05]
+  Status: FREE
+
+beta2d.b2.alpha: 1.122018e+00
+  Range: [1.000e-01, 1.000e+01]
+  Status: FREE
+
+beta2d.b2.ellip: 0.000000e+00
+  Range: [0.000e+00, 7.000e-01]
+  Status: FROZEN
+
+beta2d.b2.theta: 1.776357e-15
+  Range: [-6.283e+00, 6.283e+00]
+  Status: FROZEN
+
+beta2d.b2.xpos: 2.530703e+02
+  Range: [0.000e+00, 5.130e+02]
+  Status: FREE
+
+beta2d.b2.ypos: 2.610511e+02
+  Range: [0.000e+00, 5.130e+02]
+  Status: FREE
+
+const2d.bkg.c0: 8.128305e-02
+  Range: [1.000e-03, 2.000e+02]
+  Status: FREE
+
+Fit Statistics:
+Statistic: cstat
+Statistic value: 2.294892e+05
+Degrees of freedom: 263158
+Reduced statistic: 8.720584e-01
