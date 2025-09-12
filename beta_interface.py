@@ -508,8 +508,9 @@ def create_beta_fitting_interface():
                 # Update size dropdown options based on new galaxy size
                 update_size_dropdown_options()
                 
-                # Auto-setup current model type
-                current_model_type = model_dropdown.value
+                # Reset model dropdown to Single beta when galaxy changes
+                model_dropdown.value = "Single beta"
+                current_model_type = "Single beta"
                 print(f"Setting up {current_model_type} model...")
                 tool.setup_model(current_model_type)
                 print("Model setup completed!")

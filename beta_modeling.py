@@ -90,9 +90,8 @@ class FittingConfig:
     def __post_init__(self):
         if self.available_models is None:
             self.available_models = [
-                'Single beta', 'Single beta + gauss', 'Double beta',
-                'Double beta + gauss', 'Triple beta', 'Four beta', 'Five beta',
-                'Single sersic', 'Single sersic + gauss'
+                'Single beta', 'Double beta', 'Triple beta', 'Four beta', 'Five beta',
+                'Single sersic', 'Single beta + gauss', 'Double beta + gauss', 'Single sersic + gauss'
             ]
         
         if self.available_methods is None:
