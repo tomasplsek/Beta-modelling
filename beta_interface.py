@@ -12,9 +12,17 @@ Author: Extracted from beta_fitting_improved.py
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Import utility functions
-from utils import suppress_astropy_warnings
-suppress_astropy_warnings()
+# Suppress common astropy warnings that clutter output
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='astropy')
+warnings.filterwarnings('ignore', module='astropy')
+try:
+    from astropy.utils.exceptions import AstropyWarning
+    from astropy.wcs import FITSFixedWarning
+    warnings.filterwarnings('ignore', category=AstropyWarning)
+    warnings.filterwarnings('ignore', category=FITSFixedWarning)
+except ImportError:
+    pass
 
 # Jupyter/IPython widgets
 import ipywidgets as widgets
@@ -48,9 +56,12 @@ def create_beta_fitting_interface():
             return self._profile_data, self._image_data, self._beta_params
         
         def _refresh_cache(self, tool):
-            self._profile_data = tool.get_radial_profile_data()
-            self._image_data = tool.get_image_data()
-            self._beta_params = tool.get_beta_model_params()
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                self._profile_data = tool.get_radial_profile_data()
+                self._image_data = tool.get_image_data()
+                self._beta_params = tool.get_beta_model_params()
         
         def invalidate_cache(self):
             """Force cache refresh on next access."""
@@ -118,6 +129,35 @@ def create_beta_fitting_interface():
         placeholder="Enter pc/arcsec",
         description="Scale (pc/arcsec):",
         tooltip="Scale in pc/arcsec (0 = disabled)",
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='220px')
+    )
+    
+    # PSF controls
+    psf_options = tool.get_psf_options()
+    
+    psf_dropdown = widgets.Dropdown(
+        options=psf_options['types'],
+        value=psf_options['current_type'],
+        description="PSF:",
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='220px')
+    )
+    
+    psf_sigma_input = widgets.FloatText(
+        value=1.5,
+        step=0.25,
+        description="σ:",
+        tooltip="Gaussian PSF sigma in pixels",
+        style={'description_width': '20px'},
+        layout=widgets.Layout(width='100px'),
+        disabled=True
+    )
+    
+    psf_file_dropdown = widgets.Dropdown(
+        options=psf_options['files'] if psf_options['files'] else ['No PSF files found'],
+        value=psf_options['files'][0] if psf_options['files'] else 'No PSF files found',
+        description="PSF File:",
         style={'description_width': 'initial'},
         layout=widgets.Layout(width='220px')
     )
@@ -195,16 +235,18 @@ def create_beta_fitting_interface():
             # Parameters that should use log scale
             log_scale_params = ['b1.r0', 'b1.ampl', 'b1.alpha', 'b2.r0', 'b2.ampl', 'b2.alpha', 
                                'b3.r0', 'b3.ampl', 'b3.alpha', 'b4.r0', 'b4.ampl', 'b4.alpha',
-                               'b5.r0', 'b5.ampl', 'b5.alpha', 'g1.ampl', 'bkg.c0']
+                               'b5.r0', 'b5.ampl', 'b5.alpha', 's1.r0', 's1.ampl', 'g1.ampl', 'bkg.c0']
             
             
             def clean_parameter_name(param_name):
-                """Remove beta2d. and const2d. prefixes from parameter names."""
+                """Remove beta2d., const2d., and sersic2d. prefixes from parameter names."""
                 clean_name = param_name
                 if 'beta2d.' in clean_name:
                     clean_name = clean_name.replace('beta2d.', '')
                 if 'const2d.' in clean_name:
                     clean_name = clean_name.replace('const2d.', '')
+                if 'sersic2d.' in clean_name:
+                    clean_name = clean_name.replace('sersic2d.', '')
                 return clean_name
             
             def create_parameter_widgets(param_name, info):
@@ -228,7 +270,8 @@ def create_beta_fitting_interface():
                         max=np.log10(max_val),
                         step=0.01,
                         description=display_name,
-                        layout=widgets.Layout(width='87%')
+                        style={'description_width': '80px'},
+                        layout=widgets.Layout(width='90%')
                     )
                 else:
                     # Use regular slider for other parameters
@@ -238,7 +281,8 @@ def create_beta_fitting_interface():
                         max=info['max'],
                         step=(info['max'] - info['min']) / 100,
                         description=display_name,
-                        layout=widgets.Layout(width='87%')
+                        style={'description_width': '80px'},
+                        layout=widgets.Layout(width='90%')
                     )
                 
                 # Create completely independent freeze checkbox for this specific parameter
@@ -352,32 +396,37 @@ def create_beta_fitting_interface():
     def update_plot_with_current_model():
         """Update plot with current model parameters."""
         try:
-            with plot_area:
-                clear_output(wait=True)
+            # Suppress PSF warnings during plot updates
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
                 
-                # Get data from modeling module
-                profile_data, image_data, beta_params = cache.get_cached_or_fetch(tool)
-                
-                # Check if we have fit results
-                try:
-                    from sherpa.astro.ui import get_fit_results
-                    get_fit_results()
-                    # If we get here, model has been fitted
-                    fitted = True
-                except:
-                    # Model not fitted yet, but show current model
-                    fitted = False
-                
-                # Get scale for kpc conversion (pc/arcsec)
-                pc_per_arcsec_scale = scale_input.value if scale_input.value > 0 else None
-                
-                # Create plot using plotting manager
-                fig = plotting_manager.create_comprehensive_plot(
-                    profile_data, image_data, tool.current_galaxy.name,
-                    tool.current_model.model_type if tool.current_model else "",
-                    fitted, beta_params, distance_scale=pc_per_arcsec_scale
-                )
-                plt.show()
+                with plot_area:
+                    clear_output(wait=True)
+                    
+                    # Get data from modeling module
+                    profile_data, image_data, beta_params = cache.get_cached_or_fetch(tool)
+                    
+                    # Check if we have fit results
+                    try:
+                        from sherpa.astro.ui import get_fit_results
+                        get_fit_results()
+                        # If we get here, model has been fitted
+                        fitted = True
+                    except:
+                        # Model not fitted yet, but show current model
+                        fitted = False
+                    
+                    # Get scale for kpc conversion (pc/arcsec)
+                    pc_per_arcsec_scale = scale_input.value if scale_input.value > 0 else None
+                    
+                    # Create plot using plotting manager
+                    fig = plotting_manager.create_comprehensive_plot(
+                        profile_data, image_data, tool.current_galaxy.name,
+                        tool.current_model.model_type if tool.current_model else "",
+                        fitted, beta_params, distance_scale=pc_per_arcsec_scale
+                    )
+                    plt.show()
         except Exception as e:
             print(f"Error updating plot: {e}")
     
@@ -956,6 +1005,104 @@ def create_beta_fitting_interface():
             except Exception as e:
                 print(f"Error saving combined plot: {e}")
     
+    def update_psf_widget_visibility():
+        """Update visibility and enabled state of PSF-related widgets based on PSF type selection."""
+        psf_type = psf_dropdown.value
+        
+        # Always show sigma input (it's always visible to the right of PSF dropdown)
+        # psf_sigma_input.layout.display = 'block'
+        
+        # Enable/disable sigma input based on PSF type
+        if psf_type == "Idealized Gaussian PSF":
+            psf_sigma_input.disabled = False
+        else:
+            psf_sigma_input.disabled = True
+        
+        # Show/hide file dropdown based on PSF type  
+        if psf_type == "Load PSF file":
+            psf_file_dropdown.layout.display = 'block'
+        else:
+            psf_file_dropdown.layout.display = 'none'
+    
+    def on_psf_change(change):
+        """Handle PSF dropdown changes"""
+        if tool.current_model is not None:
+            with output_area:
+                try:
+                    psf_type = change['new']
+                    print(f"Changing PSF to: {psf_type}")
+                    
+                    # Update widget visibility
+                    update_psf_widget_visibility()
+                    
+                    # Configure PSF in the backend using the correct backend strings
+                    import warnings
+                    if psf_type == "No PSF":
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                            tool.setup_psf(psf_type="No PSF")
+                        print("PSF disabled")
+                    elif psf_type == "Idealized Gaussian PSF":
+                        sigma = psf_sigma_input.value
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                            tool.setup_psf(psf_type="Idealized Gaussian PSF", sigma=sigma)
+                        print(f"Gaussian PSF enabled with σ = {sigma:.2f} pixels")
+                    elif psf_type == "Load PSF file":
+                        psf_file = psf_file_dropdown.value
+                        if psf_file != 'No PSF files found':
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                                tool.setup_psf(psf_type="Load PSF file", psf_file=psf_file)
+                            print(f"PSF loaded from file: {psf_file}")
+                        else:
+                            print("No PSF files available")
+                    
+                    # Invalidate cache and update plot
+                    cache.invalidate_cache()
+                    update_plot_with_current_model()
+                        
+                except Exception as e:
+                    print(f"Error changing PSF: {e}")
+    
+    def on_psf_sigma_change(change):
+        """Handle PSF sigma input changes"""
+        if tool.current_model is not None and psf_dropdown.value == "Idealized Gaussian PSF":
+            with output_area:
+                try:
+                    sigma = change['new']
+                    print(f"Updating Gaussian PSF σ to {sigma:.2f} pixels")
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                        tool.setup_psf(psf_type="Idealized Gaussian PSF", sigma=sigma)
+                    
+                    # Invalidate cache and update plot
+                    cache.invalidate_cache()
+                    update_plot_with_current_model()
+                        
+                except Exception as e:
+                    print(f"Error updating PSF sigma: {e}")
+    
+    def on_psf_file_change(change):
+        """Handle PSF file dropdown changes"""
+        if tool.current_model is not None and psf_dropdown.value == "Load PSF file":
+            with output_area:
+                try:
+                    psf_file = change['new']
+                    if psf_file != 'No PSF files found':
+                        print(f"Loading PSF from file: {psf_file}")
+                        tool.setup_psf(psf_type="Load PSF file", psf_file=psf_file)
+                        
+                        # Invalidate cache and update plot
+                        cache.invalidate_cache()
+                        update_plot_with_current_model()
+                    else:
+                        print("No PSF files available")
+                        
+                except Exception as e:
+                    print(f"Error loading PSF file: {e}")
+    
     # Connect event handlers
     fit_button.on_click(on_fit_model)
     mcmc_button.on_click(on_run_mcmc)
@@ -968,6 +1115,14 @@ def create_beta_fitting_interface():
     galaxy_dropdown.observe(on_galaxy_change, names='value')
     size_dropdown.observe(on_scale_dropdown_change, names='value')
     scale_input.observe(on_scale_change, names='value')
+    
+    # PSF event handlers
+    psf_dropdown.observe(on_psf_change, names='value')
+    psf_sigma_input.observe(on_psf_sigma_change, names='value')
+    psf_file_dropdown.observe(on_psf_file_change, names='value')
+    
+    # Initialize PSF widget visibility
+    update_psf_widget_visibility()
     
     # First row of buttons: Fit Model, Save Params, Save Combined
     buttons_row1 = widgets.HBox([
@@ -1015,6 +1170,16 @@ def create_beta_fitting_interface():
         padding='1px'
     ))
     
+    # PSF row with dropdown and conditionally visible sigma input
+    psf_row = widgets.HBox([
+        psf_dropdown,
+        psf_sigma_input
+    ], layout=widgets.Layout(
+        width='100%',
+        justify_content='flex-start',
+        align_items='center'
+    ))
+    
     # Model and MCMC settings side by side
     settings_row = widgets.HBox([
         model_settings,
@@ -1032,6 +1197,8 @@ def create_beta_fitting_interface():
         galaxy_dropdown,
         size_dropdown,
         scale_input,
+        psf_row,
+        psf_file_dropdown,
         settings_row,
         buttons_row1,
         buttons_row2,

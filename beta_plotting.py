@@ -19,9 +19,17 @@ from matplotlib import gridspec
 from matplotlib import patheffects
 from scipy.stats import gaussian_kde
 
-# Import utility functions
-from utils import suppress_astropy_warnings
-suppress_astropy_warnings()
+# Suppress common astropy warnings that clutter output
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='astropy')
+warnings.filterwarnings('ignore', module='astropy')
+try:
+    from astropy.utils.exceptions import AstropyWarning
+    from astropy.wcs import FITSFixedWarning
+    warnings.filterwarnings('ignore', category=AstropyWarning)
+    warnings.filterwarnings('ignore', category=FITSFixedWarning)
+except ImportError:
+    pass
 
 from astropy.convolution import Gaussian2DKernel, convolve
 
@@ -170,14 +178,15 @@ class PlottingManager:
         colors = ['blue', 'green', 'purple', 'brown', 'pink']
         linestyles = ['--', ':', '-.', '-', '--']
         
-        beta_comp_idx = 0
+        comp_idx = 0
         for comp_name, comp_data in profile_data.components.items():
             if comp_name.startswith('b') and comp_name != 'bkg':
-                color = colors[beta_comp_idx % len(colors)]
-                linestyle = linestyles[beta_comp_idx % len(linestyles)]
+                # Beta component
+                color = colors[comp_idx % len(colors)]
+                linestyle = linestyles[comp_idx % len(linestyles)]
                 
                 # Create label with indexed r0 notation and r0 value
-                label = f'Beta {beta_comp_idx + 1}'
+                label = f'Beta {comp_idx + 1}'
                 
                 # Add r0 value to label if beta_params are available
                 if beta_params and comp_name in beta_params:
@@ -196,7 +205,34 @@ class PlottingManager:
                 ax_main.plot(profile_data.radius_pixels, comp_data / c, linestyle, 
                            color=color, linewidth=1.5, 
                            label=label, alpha=0.8, zorder=2)
-                beta_comp_idx += 1
+                comp_idx += 1
+            elif comp_name.startswith('s') and comp_name != 'bkg':
+                # Sersic component
+                color = colors[comp_idx % len(colors)]
+                linestyle = linestyles[comp_idx % len(linestyles)]
+                
+                # Create label for Sersic component
+                label = f'Sersic {comp_idx + 1}'
+                
+                # Add r_eff value to label if beta_params are available
+                if beta_params and comp_name in beta_params:
+                    r_eff_pixels = beta_params[comp_name].get('r0', 0)  # Use r0 parameter
+                    n_value = beta_params[comp_name].get('n', 1)
+                    # Convert to appropriate units  
+                    if distance_scale is not None and distance_scale > 0:
+                        # Convert pixels -> arcsec -> parsec -> kpc
+                        r_eff_arcsec = r_eff_pixels * profile_data.pixel_scale
+                        r_eff_kpc = (r_eff_arcsec * distance_scale) / 1000.0
+                        label += f' ($R_{{eff}}={r_eff_kpc:.2f}$ kpc, $n={n_value:.1f}$)'
+                    else:
+                        # Convert pixels -> arcsec
+                        r_eff_arcsec = r_eff_pixels * profile_data.pixel_scale
+                        label += f' ($R_{{eff}}={r_eff_arcsec:.1f}$", $n={n_value:.1f}$)'
+                
+                ax_main.plot(profile_data.radius_pixels, comp_data / c, linestyle, 
+                           color=color, linewidth=1.5, 
+                           label=label, alpha=0.8, zorder=2)
+                comp_idx += 1
             elif comp_name == 'bkg':
                 ax_main.axhline(comp_data[0] / c, color='gray', linestyle='-', 
                               linewidth=1, alpha=0.7, 

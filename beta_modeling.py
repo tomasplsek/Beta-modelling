@@ -15,9 +15,17 @@ from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-# Import utility functions
-from utils import suppress_astropy_warnings, calculate_pixel_scale_from_wcs
-suppress_astropy_warnings()
+# Suppress common astropy warnings that clutter output
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='astropy')
+warnings.filterwarnings('ignore', module='astropy')
+try:
+    from astropy.utils.exceptions import AstropyWarning
+    from astropy.wcs import FITSFixedWarning
+    warnings.filterwarnings('ignore', category=AstropyWarning)
+    warnings.filterwarnings('ignore', category=FITSFixedWarning)
+except ImportError:
+    pass
 
 from astropy.wcs import WCS
 WCS._do_not_fail_on_wcs_error = True
@@ -31,6 +39,29 @@ from astropy.nddata import Cutout2D, CCDData
 from sherpa.astro.ui import *
 from sherpa.plot import *
 from sherpa_contrib.profiles import *
+
+
+def calculate_pixel_scale_from_wcs(wcs, default_scale: float = 0.492) -> float:
+    """Calculate pixel scale in arcseconds per pixel from WCS.
+    
+    Args:
+        wcs: Astropy WCS object (can be None)
+        default_scale: Default pixel scale to use if WCS calculation fails
+        
+    Returns:
+        Pixel scale in arcseconds per pixel
+    """
+    if wcs is None:
+        return default_scale
+    
+    try:
+        # Get pixel scale from WCS in degrees
+        pixel_scale_deg = abs(wcs.wcs.cdelt[0])  # degrees per pixel
+        pixel_scale_arcsec = pixel_scale_deg * 3600.0  # convert to arcsec per pixel
+        return pixel_scale_arcsec
+    except Exception:
+        # Fallback if WCS calculation fails
+        return default_scale
 
 
 @dataclass
@@ -60,7 +91,8 @@ class FittingConfig:
         if self.available_models is None:
             self.available_models = [
                 'Single beta', 'Single beta + gauss', 'Double beta',
-                'Double beta + gauss', 'Triple beta', 'Four beta', 'Five beta'
+                'Double beta + gauss', 'Triple beta', 'Four beta', 'Five beta',
+                'Single sersic', 'Single sersic + gauss'
             ]
         
         if self.available_methods is None:
@@ -270,6 +302,10 @@ class BetaModel:
             set_source(beta2d.b1 + beta2d.b2 + beta2d.b3 + beta2d.b4 + const2d.bkg)
         elif self.model_type == "Five beta":
             set_source(beta2d.b1 + beta2d.b2 + beta2d.b3 + beta2d.b4 + beta2d.b5 + const2d.bkg)
+        elif self.model_type == "Single sersic":
+            set_source(sersic2d.s1 + const2d.bkg)
+        elif self.model_type == "Single sersic + gauss":
+            set_source(sersic2d.s1 + gauss2d.g1 + const2d.bkg)
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
         self._setup_initial_parameters()
@@ -278,60 +314,72 @@ class BetaModel:
         """Setup initial parameter values and bounds."""
         x0, y0 = self.image_center
         
-        # Primary beta component
-        set_par(b1.xpos, val=x0, min=0, max=2*x0)
-        set_par(b1.ypos, val=y0, min=0, max=2*y0)
-        set_par(b1.ellip, val=0, min=0, max=0.7)
-        set_par(b1.theta, val=0)
-        set_par(b1.r0, val=1, min=5e-2, max=1e3)
-        set_par(b1.ampl, val=50, min=1e-2, max=5e4)
-        set_par(b1.alpha, val=1, min=0.1, max=10)
+        # Primary beta component (only for beta models)
+        if "beta" in self.model_type.lower():
+            set_par(b1.xpos, val=x0, min=0, max=2*x0)
+            set_par(b1.ypos, val=y0, min=0, max=2*y0)
+            set_par(b1.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(b1.theta, val=0, frozen=True)
+            set_par(b1.r0, val=1, min=5e-2, max=1e3)
+            set_par(b1.ampl, val=50, min=1e-2, max=5e5)
+            set_par(b1.alpha, val=1, min=0.1, max=10)
         
         # Secondary beta component (if applicable)
         if "Double" in self.model_type or "Triple" in self.model_type or "Four" in self.model_type or "Five" in self.model_type:
             set_par(b2.xpos, val=x0, min=0, max=2*x0)
             set_par(b2.ypos, val=y0, min=0, max=2*y0)
-            set_par(b2.ellip, val=0, min=0, max=0.7)
-            set_par(b2.theta, val=0)
+            set_par(b2.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(b2.theta, val=0, frozen=True)
             set_par(b2.r0, val=20, min=1e-1, max=1e3)
-            set_par(b2.ampl, val=20, min=1e-2, max=5e4)
+            set_par(b2.ampl, val=20, min=1e-2, max=5e5)
             set_par(b2.alpha, val=1, min=0.1, max=10)
         
         # Tertiary beta component (if applicable)
         if "Triple" in self.model_type or "Four" in self.model_type or "Five" in self.model_type:
             set_par(b3.xpos, val=x0, min=0, max=2*x0)
             set_par(b3.ypos, val=y0, min=0, max=2*y0)
-            set_par(b3.ellip, val=0, min=0, max=0.7)
-            set_par(b3.theta, val=0)
+            set_par(b3.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(b3.theta, val=0, frozen=True)
             set_par(b3.r0, val=100, min=1, max=5e3)
-            set_par(b3.ampl, val=1, min=1e-2, max=5e4)
+            set_par(b3.ampl, val=1, min=1e-2, max=5e5)
             set_par(b3.alpha, val=1, min=0.1, max=10)
         
         # Quaternary beta component (if applicable)
         if "Four" in self.model_type or "Five" in self.model_type:
             set_par(b4.xpos, val=x0, min=0, max=2*x0)
             set_par(b4.ypos, val=y0, min=0, max=2*y0)
-            set_par(b4.ellip, val=0, min=0, max=0.7)
-            set_par(b4.theta, val=0)
+            set_par(b4.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(b4.theta, val=0, frozen=True)
             set_par(b4.r0, val=150, min=1, max=5e3)
-            set_par(b4.ampl, val=1, min=1e-2, max=5e4)
+            set_par(b4.ampl, val=1, min=1e-2, max=5e5)
             set_par(b4.alpha, val=1, min=0.1, max=10)
         
         # Quinary beta component (if applicable)
         if "Five" in self.model_type:
             set_par(b5.xpos, val=x0, min=0, max=2*x0)
             set_par(b5.ypos, val=y0, min=0, max=2*y0)
-            set_par(b5.ellip, val=0, min=0, max=0.7)
-            set_par(b5.theta, val=0)
+            set_par(b5.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(b5.theta, val=0, frozen=True)
             set_par(b5.r0, val=200, min=1, max=5e3)
-            set_par(b5.ampl, val=1, min=1e-2, max=5e4)
+            set_par(b5.ampl, val=1, min=1e-2, max=5e5)
             set_par(b5.alpha, val=1, min=0.1, max=10)
+        
+        # Sersic components (if applicable)
+        if "sersic" in self.model_type:
+            set_par(s1.xpos, val=x0, min=0, max=2*x0)
+            set_par(s1.ypos, val=y0, min=0, max=2*y0)
+            set_par(s1.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(s1.theta, val=0, frozen=True)
+            set_par(s1.r0, val=10, min=0.1, max=1e3)  # Effective radius in pixels
+            set_par(s1.n, val=1, min=0.1, max=10)  # Sersic index
+            set_par(s1.ampl, val=100, min=1e-3, max=1e5)
+        
         # Gaussian component (if applicable)
         if "gauss" in self.model_type:
             set_par(g1.xpos, val=x0, min=x0-40, max=x0+40)
             set_par(g1.ypos, val=y0, min=y0-40, max=y0+40)
-            set_par(g1.ellip, val=0, min=0, max=0.7)
-            set_par(g1.theta, val=0)
+            set_par(g1.ellip, val=0, min=0, max=0.7, frozen=True)
+            set_par(g1.theta, val=0, frozen=True)
             set_par(g1.fwhm, val=1, min=1e-3, max=2e1)
             set_par(g1.ampl, val=50, min=1e-3, max=1e5)
         
@@ -431,14 +479,30 @@ class BetaFittingTool:
         self.current_galaxy = None
         self.current_model = None
         self.current_scale = "original"
+        self.current_psf = None
+        self.psf_type = "No PSF"
+        self.psf_sigma = 3.0
         
         self._discover_galaxies()
+        self._discover_psf_files()
     
     def _discover_galaxies(self):
         """Find all FITS files in the data directory."""
         self.galaxy_files = list(self.data_directory.glob("*.fits"))
         if not self.galaxy_files:
             raise FileNotFoundError(f"No FITS files found in {self.data_directory}")
+    
+    def _discover_psf_files(self):
+        """Find all PSF files in the data directory."""
+        # Look for common PSF file patterns
+        psf_patterns = ['*psf*.fits', '*PSF*.fits', 'psf*.fits', 'PSF*.fits']
+        self.psf_files = []
+        
+        for pattern in psf_patterns:
+            self.psf_files.extend(self.data_directory.glob(pattern))
+        
+        # Remove duplicates and sort
+        self.psf_files = sorted(list(set(self.psf_files)))
     
     def load_galaxy(self, galaxy_path: Union[str, Path], scale: str = "original"):
         """Load a galaxy image and setup for fitting."""
@@ -490,25 +554,35 @@ class BetaFittingTool:
         # Set default frozen parameters
         self.set_default_frozen_parameters()
         
+        # Setup PSF if configured
+        self._apply_psf()
+        
         print(f"Setup model: {model_type}")
+        if self.psf_type != "No PSF":
+            print(f"PSF: {self.psf_type}")
     
     def fit_model(self, method: str = None, statistic: str = None):
         """Fit the current model to the data."""
         if self.current_model is None:
             raise ValueError("No model setup. Call setup_model() first.")
         
-        # Set fitting parameters
-        if method:
-            set_method(method)
-        if statistic:
-            set_stat(statistic)
-        
-        print("Fitting model...\n")
-        fit()
-        print("\nFit completed!")
-        
-        # Show fit results
-        self.show_fit_results()
+        # Suppress PSF warnings during fitting
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+            
+            # Set fitting parameters
+            if method:
+                set_method(method)
+            if statistic:
+                set_stat(statistic)
+            
+            print("Fitting model...\n")
+            fit()
+            print("\nFit completed!")
+            
+            # Show fit results
+            self.show_fit_results()
     
     def show_fit_results(self):
         """Display fit results."""
@@ -559,7 +633,7 @@ class BetaFittingTool:
         # Parameters to freeze by default: B1 X, B1 Y, B1 Alpha, B2 X, B2 Y, B2 Alpha, etc.
         default_frozen = ['b1.xpos', 'b1.ypos', 'b1.alpha', 'b2.xpos', 'b2.ypos', 'b2.alpha',
                          'b3.xpos', 'b3.ypos', 'b3.alpha', 'b4.xpos', 'b4.ypos', 'b4.alpha',
-                         'b5.xpos', 'b5.ypos', 'b5.alpha']
+                         'b5.xpos', 'b5.ypos', 'b5.alpha', 's1.xpos', 's1.ypos']
         
         for param_name in default_frozen:
             try:
@@ -596,6 +670,8 @@ class BetaFittingTool:
             params['b1.r0'] = _get_param_info(b1, 'r0')
             params['b1.ampl'] = _get_param_info(b1, 'ampl')
             params['b1.alpha'] = _get_param_info(b1, 'alpha')
+            params['b1.ellip'] = _get_param_info(b1, 'ellip')
+            params['b1.theta'] = _get_param_info(b1, 'theta')
             params['b1.xpos'] = _get_param_info(b1, 'xpos')
             params['b1.ypos'] = _get_param_info(b1, 'ypos')
         except:
@@ -608,6 +684,8 @@ class BetaFittingTool:
                 params['b2.r0'] = _get_param_info(b2, 'r0')
                 params['b2.ampl'] = _get_param_info(b2, 'ampl')
                 params['b2.alpha'] = _get_param_info(b2, 'alpha')
+                params['b2.ellip'] = _get_param_info(b2, 'ellip')
+                params['b2.theta'] = _get_param_info(b2, 'theta')
                 params['b2.xpos'] = _get_param_info(b2, 'xpos')
                 params['b2.ypos'] = _get_param_info(b2, 'ypos')
             except:
@@ -620,6 +698,8 @@ class BetaFittingTool:
                 params['b3.r0'] = _get_param_info(b3, 'r0')
                 params['b3.ampl'] = _get_param_info(b3, 'ampl')
                 params['b3.alpha'] = _get_param_info(b3, 'alpha')
+                params['b3.ellip'] = _get_param_info(b3, 'ellip')
+                params['b3.theta'] = _get_param_info(b3, 'theta')
                 params['b3.xpos'] = _get_param_info(b3, 'xpos')
                 params['b3.ypos'] = _get_param_info(b3, 'ypos')
             except:
@@ -632,6 +712,8 @@ class BetaFittingTool:
                 params['b4.r0'] = _get_param_info(b4, 'r0')
                 params['b4.ampl'] = _get_param_info(b4, 'ampl')
                 params['b4.alpha'] = _get_param_info(b4, 'alpha')
+                params['b4.ellip'] = _get_param_info(b4, 'ellip')
+                params['b4.theta'] = _get_param_info(b4, 'theta')
                 params['b4.xpos'] = _get_param_info(b4, 'xpos')
                 params['b4.ypos'] = _get_param_info(b4, 'ypos')
             except:
@@ -644,6 +726,8 @@ class BetaFittingTool:
                 params['b5.r0'] = _get_param_info(b5, 'r0')
                 params['b5.ampl'] = _get_param_info(b5, 'ampl')
                 params['b5.alpha'] = _get_param_info(b5, 'alpha')
+                params['b5.ellip'] = _get_param_info(b5, 'ellip')
+                params['b5.theta'] = _get_param_info(b5, 'theta')
                 params['b5.xpos'] = _get_param_info(b5, 'xpos')
                 params['b5.ypos'] = _get_param_info(b5, 'ypos')
             except:
@@ -657,6 +741,20 @@ class BetaFittingTool:
                 params['g1.ampl'] = _get_param_info(g1, 'ampl')
                 params['g1.xpos'] = _get_param_info(g1, 'xpos')
                 params['g1.ypos'] = _get_param_info(g1, 'ypos')
+            except:
+                pass
+        
+        # Sersic component (for sersic models)
+        if "sersic" in model_type:
+            try:
+                s1 = get_model_component('s1')
+                params['s1.r0'] = _get_param_info(s1, 'r0')
+                params['s1.n'] = _get_param_info(s1, 'n')
+                params['s1.ampl'] = _get_param_info(s1, 'ampl')
+                params['s1.ellip'] = _get_param_info(s1, 'ellip')
+                params['s1.theta'] = _get_param_info(s1, 'theta')
+                params['s1.xpos'] = _get_param_info(s1, 'xpos')
+                params['s1.ypos'] = _get_param_info(s1, 'ypos')
             except:
                 pass
         
@@ -674,10 +772,19 @@ class BetaFittingTool:
         try:
             # Get profile data with fallback for multi-component models
             from sherpa_contrib.profiles import get_data_prof, get_model_prof
-            prof = get_data_prof(model=b1)
+            
+            # Determine which component to use for profile extraction
+            if "sersic" in self.current_model.model_type:
+                # Use s1 for sersic models
+                prof = get_data_prof(model=s1)
+                y_fit = get_model_prof(model=s1).y
+            else:
+                # Use b1 for beta models
+                prof = get_data_prof(model=b1)
+                y_fit = get_model_prof(model=b1).y
+                
             rad_pixels = (prof.xlo + prof.xhi) / 2
             y, yerr = prof.y, prof.yerr
-            y_fit = get_model_prof(model=b1).y
             
             # Get pixel scale from WCS if available
             pixel_scale = calculate_pixel_scale_from_wcs(
@@ -703,6 +810,8 @@ class BetaFittingTool:
                 components['b4'] = self._calculate_beta1d_profile(rad_pixels, param_info['b4'], pixel_scale=None)
             if 'b5' in param_info:
                 components['b5'] = self._calculate_beta1d_profile(rad_pixels, param_info['b5'], pixel_scale=None)
+            if 's1' in param_info:
+                components['s1'] = self._calculate_sersic1d_profile(rad_pixels, param_info['s1'], pixel_scale=None)
             if 'bkg' in param_info:
                 components['bkg'] = np.full_like(rad_pixels, param_info['bkg']['c0'])
             
@@ -827,6 +936,19 @@ class BetaFittingTool:
                 except Exception:
                     pass
             
+            # Sersic component (for sersic models)
+            if "sersic" in self.current_model.model_type:
+                try:
+                    beta_params['s1'] = {
+                        'xpos': get_par('s1.xpos').val,
+                        'ypos': get_par('s1.ypos').val,
+                        'r0': get_par('s1.r0').val,
+                        'n': get_par('s1.n').val,
+                        'ampl': get_par('s1.ampl').val
+                    }
+                except Exception:
+                    pass
+            
         except Exception as e:
             print(f"Warning: Could not extract beta model parameters: {e}")
         
@@ -917,6 +1039,18 @@ class BetaFittingTool:
                 }
             except Exception:
                 pass
+            
+            # Sersic component
+            try:
+                param_values['s1'] = {
+                    'ampl': get_par('s1.ampl').val,
+                    'r0': get_par('s1.r0').val,
+                    'n': get_par('s1.n').val,
+                    'xpos': get_par('s1.xpos').val,
+                    'ypos': get_par('s1.ypos').val
+                }
+            except Exception:
+                pass
                 
         except Exception as e:
             print(f"Warning: Could not extract parameter values: {e}")
@@ -941,6 +1075,40 @@ class BetaFittingTool:
                 return ampl * (1 + (radius / r0_pixels) ** 2) ** (-alpha)
         except Exception as e:
             print(f"Error calculating beta profile: {e}")
+            return np.zeros_like(radius)
+    
+    def _calculate_sersic1d_profile(self, radius: np.ndarray, sersic_params: dict, pixel_scale: float = None) -> np.ndarray:
+        """Calculate 1D Sersic profile from parameter dictionary.
+        
+        Sersic profile: I(r) = ampl * exp(-b_n * ((r/r0)^(1/n) - 1))
+        where r0 is the effective radius, n is the Sersic index, and b_n ≈ 2n - 1/3 + 4/(405n) + 46/(25515n^2)
+        """
+        try:
+            ampl = sersic_params['ampl']
+            r0_pixels = sersic_params['r0']  # r0 is effective radius in pixels
+            n = sersic_params['n']  # Sersic index
+            
+            # Convert r0 from pixels to arcseconds if pixel_scale is provided
+            if pixel_scale is not None:
+                r0_arcsec = r0_pixels * pixel_scale
+                # radius is now in arcseconds, r0_arcsec is also in arcseconds
+                ratio = radius / r0_arcsec
+            else:
+                # Fallback to pixel-based calculation
+                ratio = radius / r0_pixels
+            
+            # Calculate b_n coefficient (approximation for n > 0.36)
+            # b_n ≈ 2n - 1/3 + 4/(405n) + 46/(25515n^2) + 131/(1148175n^3) - 2194697/(30690717750n^4)
+            b_n = 2*n - 1/3 + 4/(405*n) + 46/(25515*n**2)
+            
+            # Sersic profile: I(r) = I_0 * exp(-b_n * ((r/R_e)^(1/n) - 1))
+            # Avoid issues with very small radii by adding a small offset
+            ratio = np.maximum(ratio, 1e-10)
+            profile = ampl * np.exp(-b_n * (np.power(ratio, 1/n) - 1))
+            
+            return profile
+        except Exception as e:
+            print(f"Error calculating Sersic profile: {e}")
             return np.zeros_like(radius)
     
     def run_mcmc_analysis(self, length: int = None, burn_in: int = None) -> pd.DataFrame:
@@ -985,3 +1153,120 @@ class BetaFittingTool:
         ccd.write(filename, overwrite=True)
         
         print(f"Residual saved to {filename}")
+    
+    def setup_psf(self, psf_type: str, psf_file: str = None, sigma: float = 3.0):
+        """Setup PSF for convolution with the model."""
+        self.psf_type = psf_type
+        self.psf_sigma = sigma
+        
+        if psf_type == "No PSF":
+            self.current_psf = None
+        elif psf_type == "Idealized Gaussian PSF":
+            self._create_gaussian_psf(sigma)
+        elif psf_type == "Load PSF file" and psf_file:
+            self._load_psf_file(psf_file)
+        else:
+            raise ValueError(f"Invalid PSF configuration: {psf_type}, {psf_file}")
+        
+        # Apply PSF immediately when configured
+        self._apply_psf()
+    
+    def _create_gaussian_psf(self, sigma: float):
+        """Create an idealized Gaussian PSF."""
+        try:
+            # Create a small Gaussian PSF kernel centered on the current galaxy center
+            if self.current_galaxy is None:
+                center = (50, 50)  # Default center
+                size = 101
+            else:
+                center = self.current_galaxy.center
+                # Use a reasonable PSF size (should be odd for proper centering)
+                size = min(101, int(self.current_galaxy.shape[0] // 4))
+                if size % 2 == 0:
+                    size += 1
+            
+            # Create coordinate grids
+            y, x = np.mgrid[0:size, 0:size]
+            psf_center = size // 2
+            
+            # Create Gaussian PSF
+            psf_data = np.exp(-((x - psf_center)**2 + (y - psf_center)**2) / (2 * sigma**2))
+            psf_data /= np.sum(psf_data)  # Normalize
+            
+            # Create a temporary PSF file
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(suffix='.fits', delete=False)
+            temp_file.close()
+            
+            # Save PSF as FITS file
+            hdu = fits.PrimaryHDU(data=psf_data)
+            hdu.writeto(temp_file.name, overwrite=True)
+            
+            self.current_psf = temp_file.name
+            print(f"Created Gaussian PSF with σ={sigma} pixels")
+            
+        except Exception as e:
+            print(f"Error creating Gaussian PSF: {e}")
+            self.current_psf = None
+    
+    def _load_psf_file(self, psf_file: str):
+        """Load a PSF from a FITS file."""
+        try:
+            psf_path = Path(psf_file)
+            if not psf_path.is_absolute():
+                psf_path = self.data_directory / psf_path
+            
+            if not psf_path.exists():
+                raise FileNotFoundError(f"PSF file not found: {psf_path}")
+            
+            # Verify it's a valid FITS file
+            with fits.open(psf_path) as hdul:
+                psf_data = hdul[0].data
+                if psf_data is None or psf_data.size == 0:
+                    raise ValueError(f"Invalid PSF data in {psf_path}")
+            
+            self.current_psf = str(psf_path)
+            print(f"Loaded PSF from: {psf_path.name}")
+            
+        except Exception as e:
+            print(f"Error loading PSF file: {e}")
+            self.current_psf = None
+    
+    def _apply_psf(self):
+        """Apply PSF to the current model in Sherpa."""
+        try:
+            # Suppress PSF pixel size warning
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
+                
+                if self.psf_type == "No PSF" or self.current_psf is None:
+                    # Clear/remove PSF from Sherpa
+                    from sherpa.astro.ui import delete_psf
+                    try:
+                        delete_psf()
+                        print("PSF cleared")
+                    except:
+                        # PSF might not exist, which is fine
+                        pass
+                    return
+                
+                # Load PSF in Sherpa
+                load_psf("psf1", self.current_psf)
+                
+                # Set the PSF for the model
+                set_psf("psf1")
+                
+                print(f"Applied PSF: {self.psf_type}")
+            
+        except Exception as e:
+            print(f"Warning: Could not apply PSF: {e}")
+    
+    def get_psf_options(self):
+        """Get available PSF options."""
+        return {
+            'types': ["No PSF", "Idealized Gaussian PSF", "Load PSF file"],
+            'files': [f.name for f in self.psf_files],
+            'current_type': self.psf_type,
+            'current_sigma': self.psf_sigma
+        }
