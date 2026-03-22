@@ -11,6 +11,8 @@ Author: Extracted from beta_fitting_improved.py
 
 import os
 import glob
+import io
+import contextlib
 from typing import Dict, List, Tuple, Optional, Union, Any
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,9 +38,13 @@ from astropy.io import fits
 from astropy.nddata import Cutout2D, CCDData
 
 # Sherpa imports
-from sherpa.astro.ui import *
-from sherpa.plot import *
-from sherpa_contrib.profiles import *
+# Sherpa may print an informational warning to stdout when optional XSPEC
+# support is unavailable. We do not use XSPEC models in this pipeline, so
+# silence that startup message to keep notebook output clean.
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    from sherpa.astro.ui import *
+    from sherpa.plot import *
+    from sherpa_contrib.profiles import *
 
 
 def calculate_pixel_scale_from_wcs(wcs, default_scale: float = 0.492) -> float:
@@ -1160,7 +1166,7 @@ class BetaFittingTool:
         
         if psf_type == "No PSF":
             self.current_psf = None
-        elif psf_type == "Idealized Gaussian PSF":
+        elif psf_type == "Gaussian PSF":
             self._create_gaussian_psf(sigma)
         elif psf_type == "Load PSF file" and psf_file:
             self._load_psf_file(psf_file)
@@ -1236,7 +1242,9 @@ class BetaFittingTool:
         try:
             # Suppress PSF pixel size warning
             import warnings
-            with warnings.catch_warnings():
+            import io
+            import contextlib
+            with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
                 
                 if self.psf_type == "No PSF" or self.current_psf is None:
@@ -1264,7 +1272,7 @@ class BetaFittingTool:
     def get_psf_options(self):
         """Get available PSF options."""
         return {
-            'types': ["No PSF", "Idealized Gaussian PSF", "Load PSF file"],
+            'types': ["No PSF", "Gaussian PSF", "Load PSF file"],
             'files': [f.name for f in self.psf_files],
             'current_type': self.psf_type,
             'current_sigma': self.psf_sigma

@@ -269,6 +269,7 @@ def create_beta_fitting_interface():
                         min=np.log10(min_val),
                         max=np.log10(max_val),
                         step=0.01,
+                        continuous_update=False,
                         description=display_name,
                         style={'description_width': '80px'},
                         layout=widgets.Layout(width='90%')
@@ -280,6 +281,7 @@ def create_beta_fitting_interface():
                         min=info['min'],
                         max=info['max'],
                         step=(info['max'] - info['min']) / 100,
+                        continuous_update=False,
                         description=display_name,
                         style={'description_width': '80px'},
                         layout=widgets.Layout(width='90%')
@@ -446,6 +448,8 @@ def create_beta_fitting_interface():
                 
                 # Update sliders with fitted values
                 update_sliders_from_backend()
+                # Fitting changes model outputs; force fresh profile/image fetch for plotting
+                cache.invalidate_cache()
                 
                 # Show frozen status
                 param_info = tool.get_parameter_info()
@@ -755,6 +759,7 @@ def create_beta_fitting_interface():
                     # Reload galaxy with new scale
                     galaxy_file = tool.current_galaxy.filepath
                     tool.load_galaxy(galaxy_file, scale=new_scale)
+                    cache.invalidate_cache()
                     status.value = f"<b>Status:</b> ✅ Reloaded with scale: {new_scale}"
                     
                     # Re-setup current model type with new scale
@@ -1014,7 +1019,7 @@ def create_beta_fitting_interface():
         # psf_sigma_input.layout.display = 'block'
         
         # Enable/disable sigma input based on PSF type
-        if psf_type == "Idealized Gaussian PSF":
+        if psf_type == "Gaussian PSF":
             psf_sigma_input.disabled = False
         else:
             psf_sigma_input.disabled = True
@@ -1043,11 +1048,11 @@ def create_beta_fitting_interface():
                             warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
                             tool.setup_psf(psf_type="No PSF")
                         print("PSF disabled")
-                    elif psf_type == "Idealized Gaussian PSF":
+                    elif psf_type == "Gaussian PSF":
                         sigma = psf_sigma_input.value
                         with warnings.catch_warnings():
                             warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
-                            tool.setup_psf(psf_type="Idealized Gaussian PSF", sigma=sigma)
+                            tool.setup_psf(psf_type="Gaussian PSF", sigma=sigma)
                         print(f"Gaussian PSF enabled with σ = {sigma:.2f} pixels")
                     elif psf_type == "Load PSF file":
                         psf_file = psf_file_dropdown.value
@@ -1068,7 +1073,7 @@ def create_beta_fitting_interface():
     
     def on_psf_sigma_change(change):
         """Handle PSF sigma input changes"""
-        if tool.current_model is not None and psf_dropdown.value == "Idealized Gaussian PSF":
+        if tool.current_model is not None and psf_dropdown.value == "Gaussian PSF":
             with output_area:
                 try:
                     sigma = change['new']
@@ -1076,7 +1081,7 @@ def create_beta_fitting_interface():
                     import warnings
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", message="PSF Image does not have a pixel size.*")
-                        tool.setup_psf(psf_type="Idealized Gaussian PSF", sigma=sigma)
+                        tool.setup_psf(psf_type="Gaussian PSF", sigma=sigma)
                     
                     # Invalidate cache and update plot
                     cache.invalidate_cache()
@@ -1221,7 +1226,7 @@ def create_beta_fitting_interface():
         widgets.HTML("<h3>Plots</h3>"),
         plot_area
     ], layout=widgets.Layout(
-        width='50%',
+        width='45%',
         height='100%',
         padding='25px',
         overflow='hidden',
@@ -1233,7 +1238,7 @@ def create_beta_fitting_interface():
         widgets.HTML("<h3>Output</h3>"),
         output_area
     ], layout=widgets.Layout(
-        width='25%',
+        width='30%',
         height='100%',
         padding='5px',
         overflow='scroll',

@@ -17,7 +17,6 @@ from matplotlib.colors import LogNorm, LinearSegmentedColormap
 from matplotlib.patches import Ellipse, Circle
 from matplotlib import gridspec
 from matplotlib import patheffects
-from scipy.stats import gaussian_kde
 
 # Suppress common astropy warnings that clutter output
 import warnings
@@ -162,7 +161,13 @@ class PlottingManager:
         c = profile_data.pixel_scale ** 2
         
         # Plot data and total fit in main subplot (using pixels for x-axis)
-        good_data = profile_data.data_error / profile_data.data < 2
+        ratio = np.divide(
+            profile_data.data_error,
+            profile_data.data,
+            out=np.full_like(profile_data.data_error, np.inf, dtype=float),
+            where=profile_data.data != 0
+        )
+        good_data = np.isfinite(ratio) & (ratio < 2)
         ax_main.errorbar(profile_data.radius_pixels[good_data], 
                         profile_data.data[good_data] / c, 
                         yerr=profile_data.data_error[good_data] / c, 
@@ -553,6 +558,10 @@ class PlottingManager:
     
     def create_corner_plot(self, df, galaxy_name: str, config: FittingConfig, fit_statistics: Optional[np.ndarray] = None, burn_in_length: int = 0, show_plot: bool = True) -> plt.Figure:
         """Create corner plot with medians, quantiles, and improved visualization."""
+        try:
+            from scipy.stats import gaussian_kde
+        except Exception:
+            gaussian_kde = None
         param_names = df.columns
         n_params = len(param_names)
         
@@ -597,10 +606,11 @@ class PlottingManager:
                     n_bins = min(50, int(np.sqrt(len(data))))
                     ax.hist(data, bins=n_bins, alpha=0.7, density=True, color='C0', edgecolor='black', linewidth=0.5)
                     
-                    kde = gaussian_kde(data)
-                    x_range = np.linspace(data.min(), data.max(), 200)
-                    kde_values = kde(x_range)
-                    ax.plot(x_range, kde_values, 'r-', linewidth=1.5, alpha=0.8)
+                    if gaussian_kde is not None:
+                        kde = gaussian_kde(data)
+                        x_range = np.linspace(data.min(), data.max(), 200)
+                        kde_values = kde(x_range)
+                        ax.plot(x_range, kde_values, 'r-', linewidth=1.5, alpha=0.8)
                     
                     median = param_stats[param]['median']
                     q16 = param_stats[param]['q16']
@@ -615,7 +625,7 @@ class PlottingManager:
                     minus_err = param_stats[param]['minus_err']
                     plus_err = param_stats[param]['plus_err']
                     formatted_uncertainty = self._format_value_with_uncertainty(median, plus_err, minus_err)
-                    param_text = f"$\mathbf{{{param}}} = {formatted_uncertainty}$"
+                    param_text = rf"$\mathbf{{{param}}} = {formatted_uncertainty}$"
                     ax.set_title(param_text, fontsize=9, pad=5)
                     ax.set_yticks([])
                     ax.set_ylabel('')
@@ -628,6 +638,8 @@ class PlottingManager:
                     ax.scatter(x_data, y_data, alpha=0.3, s=4.5, color='C0')
 
                     try:
+                        if gaussian_kde is None:
+                            raise RuntimeError("gaussian_kde unavailable")
                         xy = np.vstack([x_data, y_data])
                         kde = gaussian_kde(xy)
                         # Use consistent limits from param_limits
